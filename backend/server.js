@@ -20,20 +20,9 @@ app.use(cors());
 app.use(express.json());
 
 const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${uniqueSuffix}-${file.originalname}`);
-  },
-});
 
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'text/csv' || file.originalname.toLowerCase().endsWith('.csv')) {
       cb(null, true);
@@ -116,6 +105,24 @@ function parseCsv(content) {
     rows: mappedRows,
     rawRows: dataRows,
   };
+}
+
+function buildRowObjects(rows, headers = []) {
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+
+  if (rows.every((row) => row && typeof row === 'object' && !Array.isArray(row))) {
+    return rows;
+  }
+
+  return rows.map((row) => {
+    const object = {};
+    headers.forEach((header, index) => {
+      object[header] = row[index] || '';
+    });
+    return object;
+  });
 }
 
 function buildFallbackRecords(rows) {
@@ -345,17 +352,18 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
-    const fileContent = fs.readFileSync(req.file.path, 'utf8');
+    const fileContent = req.file.buffer.toString('utf8');
     const parsed = parseCsv(fileContent);
 
     return res.json({
       message: 'CSV uploaded and parsed successfully',
-      fileName: req.file.filename,
+      fileName: req.file.originalname,
       originalName: req.file.originalname,
-      savedAt: req.file.path,
+      savedAt: 'memory',
       headers: parsed.headers,
       totalRows: parsed.rows.length,
       rows: parsed.rawRows,
+      rowObjects: parsed.rows,
     });
   } catch (error) {
     console.error('Upload processing failed:', error);
@@ -365,25 +373,45 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 
 app.post('/api/import', async (req, res) => {
   try {
-    const { fileName } = req.body || {};
-    if (!fileName) {
-      return res.status(400).json({ message: 'No file name provided for import' });
+    const { fileName, rowObjects, rows, headers } = req.body || {};
+    const normalizedHeaders = Array.isArray(headers) ? headers : [];
+    const normalizedRows = Array.isArray(rowObjects) && rowObjects.every((item) => item && typeof item === 'object' && !Array.isArray(item))
+      ? rowObjects
+      : buildRowObjects(Array.isArray(rows) ? rows : [], normalizedHeaders);
+
+    if (!normalizedRows.length) {
+      if (!fileName) {
+        return res.status(400).json({ message: 'No CSV rows provided for import' });
+      }
+
+      const filePath = path.join(uploadDir, fileName);
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: 'Uploaded file not found' });
+      }
+
+      const fileContent = fs.readFileSync(filePath, 'utf8');
+      const parsed = parseCsv(fileContent);
+      const extraction = await extractRecords(parsed.rows);
+
+      return res.json({
+        message: 'CSV imported successfully',
+        fileName,
+        headers: parsed.headers,
+        totalRows: parsed.rows.length,
+        records: extraction.records,
+        structuredJson: extraction.records,
+        aiUsed: extraction.aiUsed,
+        note: extraction.note,
+      });
     }
 
-    const filePath = path.join(uploadDir, fileName);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ message: 'Uploaded file not found' });
-    }
-
-    const fileContent = fs.readFileSync(filePath, 'utf8');
-    const parsed = parseCsv(fileContent);
-    const extraction = await extractRecords(parsed.rows);
+    const extraction = await extractRecords(normalizedRows);
 
     return res.json({
       message: 'CSV imported successfully',
-      fileName,
-      headers: parsed.headers,
-      totalRows: parsed.rows.length,
+      fileName: fileName || 'uploaded.csv',
+      headers: normalizedHeaders,
+      totalRows: normalizedRows.length,
       records: extraction.records,
       structuredJson: extraction.records,
       aiUsed: extraction.aiUsed,

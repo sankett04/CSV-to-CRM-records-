@@ -9,6 +9,7 @@ type PreviewState = {
   rows: CsvRow[];
   totalRows: number;
   fileName: string | null;
+  rowObjects: Array<Record<string, string | number | boolean | null>>;
 };
 
 type ConvertedRecord = {
@@ -98,6 +99,7 @@ export default function Home() {
         rows: data.rows || [],
         totalRows: data.totalRows || 0,
         fileName: data.fileName || null,
+        rowObjects: Array.isArray(data.rowObjects) ? data.rowObjects : [],
       });
       setSearchTerm('');
       setCurrentPage(1);
@@ -112,7 +114,7 @@ export default function Home() {
   };
 
   const handleUpload = async () => {
-    if (!csvPreview?.fileName) return;
+    if (!csvPreview) return;
 
     setIsUploading(true);
     setImportProgress('Preparing conversion...');
@@ -122,7 +124,11 @@ export default function Home() {
       const response = await fetch(`${apiBaseUrl}/api/import`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileName: csvPreview.fileName }),
+        body: JSON.stringify({
+          fileName: csvPreview.fileName,
+          rowObjects: csvPreview.rowObjects,
+          headers: csvPreview.headers,
+        }),
       });
       const data = await response.json();
 
