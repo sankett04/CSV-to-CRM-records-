@@ -21,6 +21,10 @@ app.use(cors({
 }));
 app.use(express.json());
 
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', message: 'CSV backend is running' });
+});
+
 const uploadDir = path.join(__dirname, 'uploads');
 
 const upload = multer({
