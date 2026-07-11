@@ -16,7 +16,7 @@ type ConvertedRecord = {
   [key: string]: string | number | boolean | null;
 };
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ;
 
 export default function Home() {
   const [isDragging, setIsDragging] = useState(false);
