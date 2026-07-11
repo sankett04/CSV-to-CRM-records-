@@ -16,7 +16,9 @@ try {
 const app = express();
 const port = Number(process.env.PORT) || 5000;
 
-app.use(cors());
+app.use(cors({
+  origin: 'https://csv-to-crm-records.vercel.app'
+}));
 app.use(express.json());
 
 const uploadDir = path.join(__dirname, 'uploads');
